@@ -35,8 +35,13 @@ COPY --from=build /app/.output /app
 # Copy migrations
 COPY --from=build /app/server/database/migrations /app/server/database/migrations
 # libsql (https://github.com/nitrojs/nitro/issues/3328)
-RUN cd /app/server && \
-    npm install --no-save --omit=dev libsql && \
+# npm 11.x crashes when installing into a dir with pre-existing package.json but no node_modules
+# workaround: install in a clean temp dir and copy the result
+RUN mkdir -p /tmp/libsql /app/server/node_modules && \
+    cd /tmp/libsql && \
+    npm install --no-save libsql && \
+    cp -r node_modules/. /app/server/node_modules/ && \
+    cd / && rm -rf /tmp/libsql && \
     npm cache clean --force
 # cli
 COPY --from=build /app/cli/cli.sh /usr/local/bin/cli
