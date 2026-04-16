@@ -63,7 +63,7 @@ class WireGuard {
 
     WG_DEBUG('Saving Config...');
     await fs.writeFile(
-      `/etc/wireguard/${wgInterface.name}.conf`,
+      `/etc/wireguard/${WG_ENV.WG_INTERFACE}.conf`,
       result.join('\n\n'),
       {
         mode: 0o600,
@@ -74,7 +74,7 @@ class WireGuard {
 
   async #syncWireguardConfig(wgInterface: InterfaceType) {
     WG_DEBUG('Syncing Config...');
-    await wg.sync(wgInterface.name);
+    await wg.sync(WG_ENV.WG_INTERFACE);
     WG_DEBUG('Config synced successfully.');
   }
 
@@ -97,7 +97,7 @@ class WireGuard {
     }));
 
     // Loop WireGuard status
-    const dump = await wg.dump(wgInterface.name);
+    const dump = await wg.dump(WG_ENV.WG_INTERFACE);
     dump.forEach(
       ({ publicKey, latestHandshakeAt, endpoint, transferRx, transferTx }) => {
         const client = clients.find((client) => client.publicKey === publicKey);
@@ -118,7 +118,7 @@ class WireGuard {
   async dumpByPublicKey(publicKey: string) {
     const wgInterface = await Database.interfaces.get();
 
-    const dump = await wg.dump(wgInterface.name);
+    const dump = await wg.dump(WG_ENV.WG_INTERFACE);
     const clientDump = dump.find(
       ({ publicKey: dumpPublicKey }) => dumpPublicKey === publicKey
     );
@@ -145,7 +145,7 @@ class WireGuard {
     }));
 
     // Loop WireGuard status
-    const dump = await wg.dump(wgInterface.name);
+    const dump = await wg.dump(WG_ENV.WG_INTERFACE);
     dump.forEach(
       ({ publicKey, latestHandshakeAt, endpoint, transferRx, transferTx }) => {
         const client = clients.find((client) => client.publicKey === publicKey);
@@ -227,17 +227,17 @@ class WireGuard {
       Database.interfaces.update(wgInterface);
     }
 
-    WG_DEBUG(`Starting Wireguard Interface ${wgInterface.name}...`);
+    WG_DEBUG(`Starting Wireguard Interface ${WG_ENV.WG_INTERFACE}...`);
     await this.#saveWireguardConfig(wgInterface);
-    await wg.down(wgInterface.name).catch(() => {});
-    await wg.up(wgInterface.name).catch((err) => {
+    await wg.down(WG_ENV.WG_INTERFACE).catch(() => {});
+    await wg.up(WG_ENV.WG_INTERFACE).catch((err) => {
       if (
         err &&
         err.message &&
-        err.message.includes(`Cannot find device "${wgInterface.name}"`)
+        err.message.includes(`Cannot find device "${WG_ENV.WG_INTERFACE}"`)
       ) {
         throw new Error(
-          `WireGuard exited with the error: Cannot find device "${wgInterface.name}"\nThis usually means that your host's kernel does not support WireGuard!`,
+          `WireGuard exited with the error: Cannot find device "${WG_ENV.WG_INTERFACE}"\nThis usually means that your host's kernel does not support WireGuard!`,
           { cause: err.message }
         );
       }
@@ -245,7 +245,7 @@ class WireGuard {
       throw err;
     });
     await this.#syncWireguardConfig(wgInterface);
-    WG_DEBUG(`Wireguard Interface ${wgInterface.name} started successfully.`);
+    WG_DEBUG(`Wireguard Interface ${WG_ENV.WG_INTERFACE} started successfully.`);
 
     // Check if firewall was enabled but iptables isn't available
     if (wgInterface.firewallEnabled) {
@@ -283,12 +283,12 @@ class WireGuard {
   // Shutdown wireguard
   async Shutdown() {
     const wgInterface = await Database.interfaces.get();
-    await wg.down(wgInterface.name).catch(() => {});
+    await wg.down(WG_ENV.WG_INTERFACE).catch(() => {});
   }
 
   async Restart() {
     const wgInterface = await Database.interfaces.get();
-    await wg.restart(wgInterface.name);
+    await wg.restart(WG_ENV.WG_INTERFACE);
   }
 
   async cronJob() {

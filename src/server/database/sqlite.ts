@@ -123,38 +123,32 @@ async function initialSetup(db: DBServiceType) {
 }
 
 /**
- * Replaces hardcoded 'eth0' in the stored iptables hook commands with the
- * actual WG_DEVICE name. Runs after migration so deployments that use a
- * non-default outgoing interface (e.g. ens5 on EKS) get correct MASQUERADE rules.
- * Idempotent when WG_DEVICE=eth0.
+ * Updates the wgInterface.device column from 'eth0' to WG_DEVICE env var.
+ * The device value is used as {{device}} in PostUp/PostDown hook templates —
+ * it is NOT stored literally in the hook text, so we update the column directly.
+ * Runs after migration. Idempotent when WG_DEVICE=eth0.
  */
 async function normalizeDeviceName(db: DBType) {
   const device = WG_ENV.WG_DEVICE;
   if (device === 'eth0') return;
 
-  DB_DEBUG(`Normalizing device name 'eth0' -> '${device}' in hooks...`);
+  DB_DEBUG(`Normalizing device name 'eth0' -> '${device}' in interface table...`);
 
-  await db.transaction(async (tx) => {
-    const hooks = await tx.query.hooks
-      .findFirst({ where: eq(schema.hooks.id, 'wg0') });
-
-    if (!hooks) return;
-
-    const needsUpdate =
-      hooks.postUp.includes('eth0') || hooks.postDown.includes('eth0');
-
-    if (needsUpdate) {
-      await tx
-        .update(schema.hooks)
-        .set({
-          postUp: hooks.postUp.replaceAll('eth0', device),
-          postDown: hooks.postDown.replaceAll('eth0', device),
-        })
-        .where(eq(schema.hooks.id, 'wg0'))
-        .execute();
-      DB_DEBUG(`Device name normalized to '${device}' in hooks.`);
-    }
+  const iface = await db.query.wgInterface.findFirst({
+    where: eq(schema.wgInterface.name, 'wg0'),
+    columns: { device: true },
   });
+
+  if (!iface) return;
+
+  if (iface.device === 'eth0') {
+    await db
+      .update(schema.wgInterface)
+      .set({ device })
+      .where(eq(schema.wgInterface.name, 'wg0'))
+      .execute();
+    DB_DEBUG(`Device normalized to '${device}' in interface table.`);
+  }
 }
 
 /**
