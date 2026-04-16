@@ -20,6 +20,7 @@ const db = drizzle({ client, schema });
 
 export async function connect() {
   await migrate();
+  await normalizeDeviceName(db);
   await normalizeInterfaceName(db);
   const dbService = new DBService(db);
 
@@ -119,6 +120,41 @@ async function initialSetup(db: DBServiceType) {
 
     await db.general.setSetupStep(0);
   }
+}
+
+/**
+ * Replaces hardcoded 'eth0' in the stored iptables hook commands with the
+ * actual WG_DEVICE name. Runs after migration so deployments that use a
+ * non-default outgoing interface (e.g. ens5 on EKS) get correct MASQUERADE rules.
+ * Idempotent when WG_DEVICE=eth0.
+ */
+async function normalizeDeviceName(db: DBType) {
+  const device = WG_ENV.WG_DEVICE;
+  if (device === 'eth0') return;
+
+  DB_DEBUG(`Normalizing device name 'eth0' -> '${device}' in hooks...`);
+
+  await db.transaction(async (tx) => {
+    const hooks = await tx.query.hooks
+      .findFirst({ where: eq(schema.hooks.id, 'wg0') });
+
+    if (!hooks) return;
+
+    const needsUpdate =
+      hooks.postUp.includes('eth0') || hooks.postDown.includes('eth0');
+
+    if (needsUpdate) {
+      await tx
+        .update(schema.hooks)
+        .set({
+          postUp: hooks.postUp.replaceAll('eth0', device),
+          postDown: hooks.postDown.replaceAll('eth0', device),
+        })
+        .where(eq(schema.hooks.id, 'wg0'))
+        .execute();
+      DB_DEBUG(`Device name normalized to '${device}' in hooks.`);
+    }
+  });
 }
 
 /**

@@ -40,6 +40,8 @@ export const WG_ENV = {
   WG_EXECUTABLE: await detectAwg(),
   /** WireGuard interface name. Allows running multiple wg-easy instances on the same host. */
   WG_INTERFACE: process.env.WG_INTERFACE ?? 'wg0',
+  /** Network device for iptables MASQUERADE (outgoing interface). Defaults to eth0 but EKS uses ens5. */
+  WG_DEVICE: process.env.WG_DEVICE ?? 'eth0',
 };
 
 export const WG_INITIAL_ENV = {
