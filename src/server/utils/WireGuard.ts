@@ -1,8 +1,19 @@
 import fs from 'node:fs/promises';
-import debug from 'debug';
-import type { InterfaceType } from '#db/repositories/interface/types';
 
-const WG_DEBUG = debug('WireGuard');
+import { createDebug } from 'obug';
+
+import Database from '#server/utils/Database';
+import { mergeClientStatuses } from '#server/utils/clientStatus';
+import { OLD_ENV, WG_ENV } from '#server/utils/config';
+import { firewall } from '#server/utils/firewall';
+import { encodeQRCode } from '#server/utils/qr';
+import type { ID } from '#server/utils/types';
+import { wg } from '#server/utils/wgHelper';
+import { setIntervalImmediately } from '#shared/utils/time';
+import type { InterfaceType } from '#db/repositories/interface/types';
+import type { ClientQueryType } from '#db/repositories/client/types';
+
+const WG_DEBUG = createDebug('WireGuard');
 
 const generateRandomHeaderValue = () =>
   Math.floor(Math.random() * 2147483642) + 5;
@@ -14,7 +25,7 @@ class WireGuard {
   async saveConfig() {
     const wgInterface = await Database.interfaces.get();
     await this.#saveWireguardConfig(wgInterface);
-    await this.#syncWireguardConfig(wgInterface);
+    await this.#syncWireguardConfig();
     await this.#applyFirewallRules(wgInterface);
   }
 
@@ -72,21 +83,14 @@ class WireGuard {
     WG_DEBUG('Config saved successfully.');
   }
 
-  async #syncWireguardConfig(wgInterface: InterfaceType) {
+  async #syncWireguardConfig() {
     WG_DEBUG('Syncing Config...');
     await wg.sync(WG_ENV.WG_INTERFACE);
     WG_DEBUG('Config synced successfully.');
   }
 
-  async getClientsForUser(userId: ID, filter?: string) {
-    const wgInterface = await Database.interfaces.get();
-
-    let dbClients;
-    if (filter?.trim()) {
-      dbClients = await Database.clients.getForUserFiltered(userId, filter);
-    } else {
-      dbClients = await Database.clients.getForUser(userId);
-    }
+  async getClientsForUser(userId: ID, query: ClientQueryType) {
+    const dbClients = await Database.clients.getAllForUser(userId, query);
 
     const clients = dbClients.map((client) => ({
       ...client,
@@ -98,26 +102,10 @@ class WireGuard {
 
     // Loop WireGuard status
     const dump = await wg.dump(WG_ENV.WG_INTERFACE);
-    dump.forEach(
-      ({ publicKey, latestHandshakeAt, endpoint, transferRx, transferTx }) => {
-        const client = clients.find((client) => client.publicKey === publicKey);
-        if (!client) {
-          return;
-        }
-
-        client.latestHandshakeAt = latestHandshakeAt;
-        client.endpoint = endpoint;
-        client.transferRx = transferRx;
-        client.transferTx = transferTx;
-      }
-    );
-
-    return clients;
+    return mergeClientStatuses(clients, dump);
   }
 
   async dumpByPublicKey(publicKey: string) {
-    const wgInterface = await Database.interfaces.get();
-
     const dump = await wg.dump(WG_ENV.WG_INTERFACE);
     const clientDump = dump.find(
       ({ publicKey: dumpPublicKey }) => dumpPublicKey === publicKey
@@ -126,15 +114,8 @@ class WireGuard {
     return clientDump;
   }
 
-  async getAllClients(filter?: string) {
-    const wgInterface = await Database.interfaces.get();
-
-    let dbClients;
-    if (filter?.trim()) {
-      dbClients = await Database.clients.getAllPublicFiltered(filter);
-    } else {
-      dbClients = await Database.clients.getAllPublic();
-    }
+  async getAllClients(query: ClientQueryType = {}) {
+    const dbClients = await Database.clients.getAllPublic(query);
 
     const clients = dbClients.map((client) => ({
       ...client,
@@ -146,21 +127,7 @@ class WireGuard {
 
     // Loop WireGuard status
     const dump = await wg.dump(WG_ENV.WG_INTERFACE);
-    dump.forEach(
-      ({ publicKey, latestHandshakeAt, endpoint, transferRx, transferTx }) => {
-        const client = clients.find((client) => client.publicKey === publicKey);
-        if (!client) {
-          return;
-        }
-
-        client.latestHandshakeAt = latestHandshakeAt;
-        client.endpoint = endpoint;
-        client.transferRx = transferRx;
-        client.transferTx = transferTx;
-      }
-    );
-
-    return clients;
+    return mergeClientStatuses(clients, dump);
   }
 
   async getClientConfiguration({ clientId }: { clientId: ID }) {
@@ -244,8 +211,10 @@ class WireGuard {
 
       throw err;
     });
-    await this.#syncWireguardConfig(wgInterface);
-    WG_DEBUG(`Wireguard Interface ${WG_ENV.WG_INTERFACE} started successfully.`);
+    await this.#syncWireguardConfig();
+    WG_DEBUG(
+      `Wireguard Interface ${WG_ENV.WG_INTERFACE} started successfully.`
+    );
 
     // Check if firewall was enabled but iptables isn't available
     if (wgInterface.firewallEnabled) {
@@ -282,12 +251,10 @@ class WireGuard {
 
   // Shutdown wireguard
   async Shutdown() {
-    const wgInterface = await Database.interfaces.get();
     await wg.down(WG_ENV.WG_INTERFACE).catch(() => {});
   }
 
   async Restart() {
-    const wgInterface = await Database.interfaces.get();
     await wg.restart(WG_ENV.WG_INTERFACE);
   }
 

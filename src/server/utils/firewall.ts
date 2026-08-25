@@ -1,11 +1,12 @@
-import debug from 'debug';
+import { createDebug } from 'obug';
 import { isIPv6 } from 'is-ip';
 
+import { exec } from '#server/utils/cmd';
 import type { ClientType } from '#db/repositories/client/types';
 import type { InterfaceType } from '#db/repositories/interface/types';
 import type { UserConfigType } from '#db/repositories/userConfig/types';
 
-const FW_DEBUG = debug('Firewall');
+const FW_DEBUG = createDebug('Firewall');
 const CHAIN_NAME = 'WG_CLIENTS';
 
 // Mutex to prevent concurrent rule rebuilds
@@ -163,32 +164,38 @@ export const firewall = {
   /**
    * Initialize the custom chain if it doesn't exist
    */
-  async initChain(interfaceName: string): Promise<void> {
+  async initChain(interfaceName: string, enableIpv6: boolean): Promise<void> {
     FW_DEBUG(
       `Initializing firewall chain ${CHAIN_NAME} for interface ${interfaceName}`
     );
 
     // Create chain if not exists (iptables returns error if exists, so we ignore)
     await exec(`iptables -N ${CHAIN_NAME} 2>/dev/null || true`);
-    await exec(`ip6tables -N ${CHAIN_NAME} 2>/dev/null || true`);
+    if (enableIpv6) {
+      await exec(`ip6tables -N ${CHAIN_NAME} 2>/dev/null || true`);
+    }
 
     // Ensure chain is referenced from FORWARD (if not already)
     // Insert at position 1 to process before generic ACCEPT rules
     await exec(
       `iptables -C FORWARD -i ${interfaceName} -j ${CHAIN_NAME} 2>/dev/null || iptables -I FORWARD 1 -i ${interfaceName} -j ${CHAIN_NAME}`
     );
-    await exec(
-      `ip6tables -C FORWARD -i ${interfaceName} -j ${CHAIN_NAME} 2>/dev/null || ip6tables -I FORWARD 1 -i ${interfaceName} -j ${CHAIN_NAME}`
-    );
+    if (enableIpv6) {
+      await exec(
+        `ip6tables -C FORWARD -i ${interfaceName} -j ${CHAIN_NAME} 2>/dev/null || ip6tables -I FORWARD 1 -i ${interfaceName} -j ${CHAIN_NAME}`
+      );
+    }
   },
 
   /**
    * Flush all rules in the custom chain
    */
-  async flushChain(): Promise<void> {
+  async flushChain(enableIpv6: boolean): Promise<void> {
     FW_DEBUG(`Flushing firewall chain ${CHAIN_NAME}`);
     await exec(`iptables -F ${CHAIN_NAME} 2>/dev/null || true`);
-    await exec(`ip6tables -F ${CHAIN_NAME} 2>/dev/null || true`);
+    if (enableIpv6) {
+      await exec(`ip6tables -F ${CHAIN_NAME} 2>/dev/null || true`);
+    }
   },
 
   /**
@@ -244,7 +251,7 @@ export const firewall = {
   ): Promise<void> {
     if (!wgInterface.firewallEnabled) {
       FW_DEBUG('Firewall filtering disabled, removing any existing rules');
-      await this.removeFiltering(wgInterface.name);
+      await this.removeFiltering(wgInterface.name, enableIpv6);
       return;
     }
 
@@ -261,10 +268,10 @@ export const firewall = {
       FW_DEBUG('Rebuilding firewall rules...');
 
       // Initialize chain structure
-      await this.initChain(wgInterface.name);
+      await this.initChain(wgInterface.name, enableIpv6);
 
       // Flush existing rules
-      await this.flushChain();
+      await this.flushChain(enableIpv6);
 
       // Apply rules for each enabled client
       for (const client of clients) {
@@ -298,22 +305,29 @@ export const firewall = {
   /**
    * Remove all firewall filtering (when feature is disabled)
    */
-  async removeFiltering(interfaceName: string): Promise<void> {
+  async removeFiltering(
+    interfaceName: string,
+    enableIpv6: boolean
+  ): Promise<void> {
     FW_DEBUG(`Removing firewall filtering for interface ${interfaceName}`);
 
     // Remove jump rules from FORWARD chain
     await exec(
       `iptables -D FORWARD -i ${interfaceName} -j ${CHAIN_NAME} 2>/dev/null || true`
     );
-    await exec(
-      `ip6tables -D FORWARD -i ${interfaceName} -j ${CHAIN_NAME} 2>/dev/null || true`
-    );
+    if (enableIpv6) {
+      await exec(
+        `ip6tables -D FORWARD -i ${interfaceName} -j ${CHAIN_NAME} 2>/dev/null || true`
+      );
+    }
 
     // Flush and delete the chain
     await exec(`iptables -F ${CHAIN_NAME} 2>/dev/null || true`);
-    await exec(`ip6tables -F ${CHAIN_NAME} 2>/dev/null || true`);
     await exec(`iptables -X ${CHAIN_NAME} 2>/dev/null || true`);
-    await exec(`ip6tables -X ${CHAIN_NAME} 2>/dev/null || true`);
+    if (enableIpv6) {
+      await exec(`ip6tables -F ${CHAIN_NAME} 2>/dev/null || true`);
+      await exec(`ip6tables -X ${CHAIN_NAME} 2>/dev/null || true`);
+    }
   },
 
   /**

@@ -1,3 +1,11 @@
+import { setHeader } from 'h3';
+
+import Database from '#server/utils/Database';
+import WireGuard from '#server/utils/WireGuard';
+import { defineMetricsHandler } from '#server/utils/handler';
+import { formatPrometheusLabels } from '#server/utils/prometheus';
+import { isPeerConnected } from '#shared/utils/time';
+
 export default defineMetricsHandler('prometheus', async ({ event }) => {
   setHeader(event, 'Content-Type', 'text/plain');
   return getPrometheusResponse();
@@ -6,14 +14,12 @@ export default defineMetricsHandler('prometheus', async ({ event }) => {
 async function getPrometheusResponse() {
   const wgInterface = await Database.interfaces.get();
   const clients = await WireGuard.getAllClients();
-  let wireguardPeerCount = 0;
   let wireguardEnabledPeersCount = 0;
   let wireguardConnectedPeersCount = 0;
   const wireguardSentBytes = [];
   const wireguardReceivedBytes = [];
   const wireguardLatestHandshakeSeconds = [];
   for (const client of clients) {
-    wireguardPeerCount++;
     if (client.enabled === true) {
       wireguardEnabledPeersCount++;
     }
@@ -22,7 +28,13 @@ async function getPrometheusResponse() {
       wireguardConnectedPeersCount++;
     }
 
-    const id = `interface="${wgInterface.name}",enabled="${client.enabled}",ipv4Address="${client.ipv4Address}",ipv6Address="${client.ipv6Address}",name="${client.name}"`;
+    const id = formatPrometheusLabels({
+      interface: wgInterface.name,
+      enabled: client.enabled,
+      ipv4Address: client.ipv4Address,
+      ipv6Address: client.ipv6Address,
+      name: client.name,
+    });
 
     wireguardSentBytes.push(
       `wireguard_sent_bytes{${id}} ${client.transferTx ?? 0}`
@@ -36,12 +48,12 @@ async function getPrometheusResponse() {
     );
   }
 
-  const id = `interface="${wgInterface.name}"`;
+  const id = formatPrometheusLabels({ interface: wgInterface.name });
 
   const returnText = [
     '# HELP wireguard_configured_peers',
     '# TYPE wireguard_configured_peers gauge',
-    `wireguard_configured_peers{${id}} ${wireguardPeerCount}`,
+    `wireguard_configured_peers{${id}} ${clients.length}`,
     '',
     '# HELP wireguard_enabled_peers',
     '# TYPE wireguard_enabled_peers gauge',
@@ -62,6 +74,7 @@ async function getPrometheusResponse() {
     '# HELP wireguard_latest_handshake_seconds UNIX timestamp seconds of the last handshake',
     '# TYPE wireguard_latest_handshake_seconds gauge',
     `${wireguardLatestHandshakeSeconds.join('\n')}`,
+    '',
   ];
 
   return returnText.join('\n');

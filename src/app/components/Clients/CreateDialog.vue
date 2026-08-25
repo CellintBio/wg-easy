@@ -1,5 +1,5 @@
 <template>
-  <BaseDialog :trigger-class="triggerClass">
+  <BaseDialog :trigger-class="triggerClass" @update:open="resetOnOpen">
     <template #trigger>
       <slot />
     </template>
@@ -38,15 +38,23 @@ const { t } = useI18n();
 
 defineProps<{ triggerClass?: string }>();
 
+function resetOnOpen(open: boolean) {
+  if (!open) return;
+
+  name.value = '';
+  expiresAt.value = null;
+}
+
 function createClient() {
   return _createClient({ name: name.value, expiresAt: expiresAt.value });
 }
 
 const _createClient = useSubmit(
-  '/api/client',
-  {
-    method: 'post',
-  },
+  (data) =>
+    $fetch('/api/client', {
+      method: 'post',
+      body: data,
+    }),
   {
     revert: () => clientsStore.refresh(),
     successMsg: t('client.created'),

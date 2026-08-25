@@ -1,0 +1,90 @@
+# Build the wg-easy image and push it to our AWS ECR.
+#
+# Manual only (workflow_dispatch): pick the image tag when you run it — nothing is
+# committed to git or read from package.json. Use a SemVer with a leading `v` to
+# match our existing tags (the repo currently has v15.2.2). The image is also
+# pushed with a `<version>-<short-sha>` tag for traceability. amd64 only (EKS x86).
+#
+# Mirrors the pattern in the cellint monorepo (salt-master-image.yml).
+#
+# Required GitHub configuration on CellintBio/wg-easy:
+#   Variables:
+#     ECR_PUSH_ROLE_ARN - OIDC role ARN allowed to push to ECR. NOTE: the role's
+#                         trust policy must allow repo:CellintBio/wg-easy:* — the
+#                         shared monorepo role may be scoped to CellintBio/cellint
+#                         only. Extend the trust policy or use a role that permits
+#                         this repo, or the assume-role step will fail.
+#     AWS_REGION        - optional, defaults to us-east-1.
+#   Secrets:
+#     TEAMS_WEBHOOK_URL - optional Teams webhook; the notify step no-ops if unset.
+
+name: wg-easy — build & push to ECR
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Image tag to push — SemVer with a leading v, e.g. v15.4.0"
+        required: true
+        type: string
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  ECR_REPOSITORY_NAME: cellint/wg-easy
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest # amd64 (EKS nodes are x86)
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate version input
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          # SemVer with a required leading v (e.g. v15.4.0 or v15.4.0-beta.1)
+          semver='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
+          if ! echo "${VERSION}" | grep -Eq "${semver}"; then
+            echo "::error::Invalid version '${VERSION}'. Use SemVer with a leading v, e.g. v15.4.0"
+            exit 1
+          fi
+          echo "Version OK: ${VERSION}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.ECR_PUSH_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          IMAGE="${ECR_REGISTRY}/${ECR_REPOSITORY_NAME}"
+          docker buildx build --platform linux/amd64 \
+            -t "${IMAGE}:${VERSION}" \
+            -t "${IMAGE}:${VERSION}-${GITHUB_SHA::7}" \
+            --push .
+          echo "Pushed ${IMAGE}:${VERSION}"
+
+      - name: Notify Teams
+        if: always() && job.status != 'cancelled'
+        uses: ./.github/actions/teams-notify
+        with:
+          webhook-url: ${{ secrets.TEAMS_WEBHOOK_URL }}
+          status: ${{ job.status }}
+          service: wg-easy
+          action-label: build & push
+          version: ${{ inputs.version }}
