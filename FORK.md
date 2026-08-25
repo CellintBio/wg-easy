@@ -11,8 +11,10 @@ Read this before every upstream sync.
 
 ## Branch & sync model
 
-- **One long-lived integration branch** carries `upstream + our delta` and is the
-  branch we deploy from. We do not keep a pristine upstream mirror branch.
+- **`master` is our single long-lived integration branch** — it carries
+  `upstream + our delta`, is the repo default, and is the branch we deploy from. We do
+  **not** keep a pristine upstream mirror branch, and there is no separate feature
+  branch for our customizations; they live on `master`.
 - **Sync by merging, never rebasing.** Rebasing a shared long-lived branch rewrites
   history and forces you to re-resolve the same conflicts every time. `git merge`
   resolves each conflict once.
@@ -117,8 +119,9 @@ git config rerere.enabled true
 git remote get-url upstream            # expect wg-easy/wg-easy
 git fetch upstream --tags
 
-# 2. merge on a throwaway branch first (never straight onto the deploy branch)
-git checkout <integration-branch>
+# 2. merge on a throwaway branch first (never straight onto master)
+git checkout master
+git pull
 git checkout -b merge/upstream-<version>
 git merge upstream/master              # resolve conflicts per the section above
 
@@ -135,7 +138,7 @@ docker build -t wg-easy:localtest .    # proves the image still builds
 # 4. sanity-check the delta is still only our files
 git diff --stat upstream/master HEAD   # should match "Our delta vs upstream" above
 
-# 5. open a PR into the integration branch, review, merge
+# 5. open a PR into master, review, merge
 ```
 
 ### After merging & deploying
