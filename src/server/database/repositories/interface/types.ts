@@ -1,7 +1,24 @@
 import type { InferSelectModel } from 'drizzle-orm';
 import z from 'zod';
 import isCidr from 'is-cidr';
+
 import type { wgInterface } from './schema';
+
+import {
+  EnabledSchema,
+  HSchema,
+  ISchema,
+  JcSchema,
+  JmaxSchema,
+  JminSchema,
+  MtuSchema,
+  PortSchema,
+  RoutingTableSchema,
+  SSchema,
+  safeStringRefine,
+  schemaForType,
+  t,
+} from '#server/utils/types';
 
 export type InterfaceType = InferSelectModel<typeof wgInterface>;
 
@@ -31,6 +48,7 @@ export const InterfaceUpdateSchema = schemaForType<InterfaceUpdateType>()(
     ipv4Cidr: cidr,
     ipv6Cidr: cidr,
     mtu: MtuSchema,
+    routingTable: RoutingTableSchema,
     jC: JcSchema,
     jMin: JminSchema,
     jMax: JmaxSchema,

@@ -1,10 +1,10 @@
 <template>
   <BaseSwitch
-    v-model="enabled"
+    :model-value="enabled"
     :title="
       client.enabled ? $t('client.disableClient') : $t('client.enableClient')
     "
-    @click="toggleClient"
+    @update:model-value="toggleClient"
   />
 </template>
 
@@ -15,13 +15,21 @@ const props = defineProps<{
 
 const enabled = ref(props.client.enabled);
 
+watch(
+  () => props.client.enabled,
+  (value) => {
+    enabled.value = value;
+  }
+);
+
 const clientsStore = useClientsStore();
 
 const _disableClient = useSubmit(
-  `/api/client/${props.client.id}/disable`,
-  {
-    method: 'post',
-  },
+  (data) =>
+    $fetch(`/api/client/${props.client.id}/disable`, {
+      method: 'post',
+      body: data,
+    }),
   {
     revert: async () => {
       await clientsStore.refresh();
@@ -31,10 +39,11 @@ const _disableClient = useSubmit(
 );
 
 const _enableClient = useSubmit(
-  `/api/client/${props.client.id}/enable`,
-  {
-    method: 'post',
-  },
+  (data) =>
+    $fetch(`/api/client/${props.client.id}/enable`, {
+      method: 'post',
+      body: data,
+    }),
   {
     revert: async () => {
       await clientsStore.refresh();
@@ -43,11 +52,16 @@ const _enableClient = useSubmit(
   }
 );
 
-async function toggleClient() {
-  if (props.client.enabled) {
-    await _disableClient(undefined);
-  } else {
+async function toggleClient(nextEnabled: boolean | undefined) {
+  if (nextEnabled === undefined) return;
+
+  // Update immediately while the request and store refresh are in progress.
+  enabled.value = nextEnabled;
+
+  if (nextEnabled) {
     await _enableClient(undefined);
+  } else {
+    await _disableClient(undefined);
   }
 }
 </script>

@@ -5,7 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [15.4.0] - 2026-08-14
+
+### Added
+
+- Support disabling version check (https://github.com/wg-easy/wg-easy/pull/2648)
+- OAuth integration (https://github.com/wg-easy/wg-easy/pull/2659)
+- Support Table parameter (https://github.com/wg-easy/wg-easy/pull/2721)
+
+### Fixed
+
+- Button styling (https://github.com/wg-easy/wg-easy/pull/2666)
+- Escape Prometheus label values (https://github.com/wg-easy/wg-easy/pull/2702)
+- Skip ip6tables for firewall when IPv6 is disabled (https://github.com/wg-easy/wg-easy/pull/2701)
+- Various bug fixes (https://github.com/wg-easy/wg-easy/pull/2733)
+
+### Changed
+
+- Only set sysctl if needed (https://github.com/wg-easy/wg-easy/pull/2630)
+- Improve security (https://github.com/wg-easy/wg-easy/pull/2661, https://github.com/wg-easy/wg-easy/pull/2668, https://github.com/wg-easy/wg-easy/pull/2669)
+- Replace mkdocs with zensical (https://github.com/wg-easy/wg-easy/pull/2667)
+- Migrate to Nuxt 4 (https://github.com/wg-easy/wg-easy/pull/2660)
+
+## [15.3.0] - 2026-05-18
 
 ### Added
 
@@ -14,11 +36,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CLI: Show QR code (https://github.com/wg-easy/wg-easy/pull/2518)
 - Copy QR code to clipboard / save as png (https://github.com/wg-easy/wg-easy/pull/2521)
 
+### Fixed
+
+- Add trailing newline to Prometheus metrics output (https://github.com/wg-easy/wg-easy/pull/2573)
+- Correctly use DEBUG env var (https://github.com/wg-easy/wg-easy/pull/2619)
+
 ### Changed
 
 - Hooks are now Textareas (https://github.com/wg-easy/wg-easy/pull/2522)
 - Update to Node Krypton (24) (https://github.com/wg-easy/wg-easy/pull/2536)
 - Mobile UI (https://github.com/wg-easy/wg-easy/pull/2569)
+- Prevent enabling client when expired (https://github.com/wg-easy/wg-easy/pull/2594)
 
 ## [15.2.2] - 2026-02-06
 

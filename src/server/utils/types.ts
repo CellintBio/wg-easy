@@ -1,4 +1,5 @@
-import type { ZodSchema } from 'zod';
+import { useTranslation } from '@intlify/h3';
+import type { ZodType } from 'zod';
 import z from 'zod';
 import type { H3Event, EventHandlerRequest } from 'h3';
 import { isIP } from 'is-ip';
@@ -19,6 +20,15 @@ export const safeStringRefine = z
     (v) => v !== '__proto__' && v !== 'constructor' && v !== 'prototype',
     { message: t('zod.stringMalformed') }
   );
+
+function hasControlChars(str: string) {
+  // eslint-disable-next-line no-control-regex
+  return /[\x00-\x1F\x7F]/.test(str);
+}
+
+export const controlStringRefine = z
+  .string()
+  .refine((v) => !hasControlChars(v), { message: t('zod.stringMalformed') });
 
 export const EnabledSchema = z.boolean({ message: t('zod.enabled') });
 
@@ -70,12 +80,24 @@ export const HSchema = z
   })
   .nullable();
 
-export const ISchema = z.string().nullable();
+export const ISchema = z
+  .string()
+  .pipe(safeStringRefine)
+  .pipe(controlStringRefine)
+  .nullable();
 
 export const PortSchema = z
   .number({ message: t('zod.port') })
   .min(1, { message: t('zod.port') })
   .max(65535, { message: t('zod.port') });
+
+export const RoutingTableSchema = z
+  .string({ message: t('zod.interface.routingTable') })
+  .pipe(safeStringRefine)
+  .pipe(controlStringRefine)
+  .refine((v) => /^(auto|off|\d+)$/.test(v), {
+    message: t('zod.interface.routingTable'),
+  });
 
 export const PersistentKeepaliveSchema = z
   .number({ message: t('zod.persistentKeepalive') })
@@ -85,7 +107,8 @@ export const PersistentKeepaliveSchema = z
 export const AddressSchema = z
   .string({ message: t('zod.address') })
   .min(1, { message: t('zod.address') })
-  .pipe(safeStringRefine);
+  .pipe(safeStringRefine)
+  .pipe(controlStringRefine);
 
 export const DnsSchema = z.array(AddressSchema, { message: t('zod.dns') });
 
@@ -168,7 +191,7 @@ export const schemaForType =
   };
 
 export function validateZod<T>(
-  schema: ZodSchema<T>,
+  schema: ZodType<T>,
   event: H3Event<EventHandlerRequest>
 ) {
   return async (data: unknown) => {
@@ -190,51 +213,70 @@ export function validateZod<T>(
                   case 'too_small':
                     switch (v.origin) {
                       case 'string':
-                        newMessage = t('zod.generic.stringMin', [
-                          t(v.message),
-                          v.minimum,
-                        ]);
+                        newMessage = t('zod.generic.stringMin', {
+                          field: t(v.message),
+                          min: v.minimum,
+                        });
                         break;
                       case 'number':
-                        newMessage = t('zod.generic.numberMin', [
-                          t(v.message),
-                          v.minimum,
-                        ]);
+                        newMessage = t('zod.generic.numberMin', {
+                          field: t(v.message),
+                          min: v.minimum,
+                        });
+                        break;
+                    }
+                    break;
+                  case 'too_big':
+                    switch (v.origin) {
+                      case 'string':
+                        newMessage = t('zod.generic.stringMax', {
+                          field: t(v.message),
+                          max: v.maximum,
+                        });
+                        break;
+                      case 'number':
+                        newMessage = t('zod.generic.numberMax', {
+                          field: t(v.message),
+                          max: v.maximum,
+                        });
                         break;
                     }
                     break;
                   case 'invalid_type': {
                     if (v.input === null || v.input === undefined) {
-                      newMessage = t('zod.generic.required', [
-                        v.path.join('.'),
-                      ]);
+                      newMessage = t('zod.generic.required', {
+                        field: v.path.join('.'),
+                      });
                     } else {
                       switch (v.expected) {
                         case 'string':
-                          newMessage = t('zod.generic.validString', [
-                            t(v.message),
-                          ]);
+                          newMessage = t('zod.generic.validString', {
+                            field: t(v.message),
+                          });
                           break;
                         case 'boolean':
-                          newMessage = t('zod.generic.validBoolean', [
-                            t(v.message),
-                          ]);
+                          newMessage = t('zod.generic.validBoolean', {
+                            field: t(v.message),
+                          });
                           break;
                         case 'number':
-                          newMessage = t('zod.generic.validNumber', [
-                            t(v.message),
-                          ]);
+                          newMessage = t('zod.generic.validNumber', {
+                            field: t(v.message),
+                          });
                           break;
                         case 'array':
-                          newMessage = t('zod.generic.validArray', [
-                            t(v.message),
-                          ]);
+                          newMessage = t('zod.generic.validArray', {
+                            field: t(v.message),
+                          });
                           break;
                       }
                     }
                     break;
                   }
                 }
+              }
+              if (!newMessage && v.message === 'zod.generic.validNumberRange') {
+                newMessage = t(v.message, { field: v.path.join('.') });
               }
               if (newMessage) {
                 m = newMessage;
@@ -247,6 +289,7 @@ export function validateZod<T>(
           })
           .join('; ');
       }
+      // eslint-disable-next-line preserve-caught-error
       throw new Error(message);
     }
   };

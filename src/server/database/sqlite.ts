@@ -1,19 +1,20 @@
 import { drizzle } from 'drizzle-orm/libsql';
 import { migrate as drizzleMigrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
-import debug from 'debug';
+import { createDebug } from 'obug';
 import { eq } from 'drizzle-orm';
 
-import * as schema from './schema';
-import { ClientService } from './repositories/client/service';
-import { GeneralService } from './repositories/general/service';
-import { UserService } from './repositories/user/service';
-import { UserConfigService } from './repositories/userConfig/service';
-import { InterfaceService } from './repositories/interface/service';
-import { HooksService } from './repositories/hooks/service';
-import { OneTimeLinkService } from './repositories/oneTimeLink/service';
+import { GeneralService } from '#db/repositories/general/service';
+import { UserService } from '#db/repositories/user/service';
+import { UserConfigService } from '#db/repositories/userConfig/service';
+import { InterfaceService } from '#db/repositories/interface/service';
+import { HooksService } from '#db/repositories/hooks/service';
+import { OneTimeLinkService } from '#db/repositories/oneTimeLink/service';
+import { ClientService } from '#db/repositories/client/service';
+import * as schema from '#db/schema';
+import { WG_ENV, WG_INITIAL_ENV } from '#server/utils/config';
 
-const DB_DEBUG = debug('Database');
+const DB_DEBUG = createDebug('Database');
 
 const client = createClient({ url: 'file:/etc/wireguard/wg-easy.db' });
 const db = drizzle({ client, schema });
@@ -70,6 +71,7 @@ async function migrate() {
     if (e instanceof Error) {
       DB_DEBUG('Failed to migrate database:', e.message);
     }
+    throw e;
   }
 }
 
@@ -132,7 +134,9 @@ async function normalizeDeviceName(db: DBType) {
   const device = WG_ENV.WG_DEVICE;
   if (device === 'eth0') return;
 
-  DB_DEBUG(`Normalizing device name 'eth0' -> '${device}' in interface table...`);
+  DB_DEBUG(
+    `Normalizing device name 'eth0' -> '${device}' in interface table...`
+  );
 
   const iface = await db.query.wgInterface.findFirst({
     where: eq(schema.wgInterface.name, 'wg0'),
@@ -164,8 +168,9 @@ async function normalizeInterfaceName(db: DBType) {
   DB_DEBUG(`Normalizing interface name 'wg0' -> '${iface}' in hooks...`);
 
   await db.transaction(async (tx) => {
-    const hooks = await tx.query.hooks
-      .findFirst({ where: eq(schema.hooks.id, 'wg0') });
+    const hooks = await tx.query.hooks.findFirst({
+      where: eq(schema.hooks.id, 'wg0'),
+    });
 
     if (!hooks) return;
 

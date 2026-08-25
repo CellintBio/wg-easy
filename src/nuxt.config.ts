@@ -2,17 +2,14 @@ import { fileURLToPath } from 'node:url';
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
-  future: {
-    compatibilityVersion: 4,
-  },
-  compatibilityDate: '2026-02-06',
+  compatibilityDate: '2026-06-19',
   devtools: { enabled: true },
   modules: [
     '@nuxtjs/i18n',
     '@nuxtjs/tailwindcss',
     '@pinia/nuxt',
-    '@eschricht/nuxt-color-mode',
-    'radix-vue/nuxt',
+    '@nuxtjs/color-mode',
+    'reka-ui/nuxt',
     '@vueuse/nuxt',
     '@nuxt/eslint',
     '@nuxt/test-utils/module',
@@ -20,8 +17,8 @@ export default defineNuxtConfig({
   colorMode: {
     preference: 'system',
     fallback: 'light',
-    classSuffix: '',
-    cookieName: 'theme',
+    storage: 'cookie',
+    storageKey: 'theme',
   },
   css: ['~/app.css'],
   i18n: {
@@ -50,6 +47,11 @@ export default defineNuxtConfig({
         code: 'it',
         language: 'it-IT',
         name: 'Italiano',
+      },
+      {
+        code: 'ja',
+        language: 'ja-JP',
+        name: '日本語',
       },
       {
         code: 'fr',
@@ -132,6 +134,11 @@ export default defineNuxtConfig({
         name: 'Български',
       },
       {
+        code: 'hi',
+        language: 'hi-IN',
+        name: 'हिन्दी',
+      },
+      {
         code: 'gl',
         language: 'gl-ES',
         name: 'Galego',
@@ -150,21 +157,24 @@ export default defineNuxtConfig({
     },
   },
   nitro: {
+    imports: {
+      autoImport: false,
+    },
     esbuild: {
       options: {
-        // to support big int
-        target: 'node20',
+        target: 'node24',
       },
     },
-    alias: {
-      '#db': fileURLToPath(new URL('./server/database/', import.meta.url)),
-    },
     externals: {
-      traceInclude: [fileURLToPath(new URL('./cli/index.ts', import.meta.url))],
+      traceInclude: [
+        fileURLToPath(
+          new URL('./node_modules/.cache/wg-easy/trace.mjs', import.meta.url)
+        ),
+      ],
     },
   },
   alias: {
-    // for typecheck reasons (https://github.com/nuxt/cli/issues/323)
     '#db': fileURLToPath(new URL('./server/database/', import.meta.url)),
+    '#cli': fileURLToPath(new URL('./cli', import.meta.url)),
   },
 });
