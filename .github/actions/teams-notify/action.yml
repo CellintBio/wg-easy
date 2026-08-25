@@ -1,0 +1,101 @@
+# Post a deployment-status Adaptive Card to the Teams `devops` channel.
+#
+# Teams side is a Power Automate "Post to a channel when a webhook request is received"
+# Workflow (the replacement for the retired Office 365 incoming-webhook connector). Its
+# HTTP POST URL is stored as the repo secret TEAMS_WEBHOOK_URL and passed in as `webhook-url`.
+#
+# Call it as the LAST step of a job with `if: always() && job.status != 'cancelled'` and pass
+# `status: ${{ job.status }}` so both successes and failures are reported. A missing/failing
+# webhook never fails the job (it only emits a ::warning::).
+name: Teams deploy notification
+description: Post a deployment status Adaptive Card to the Teams devops channel.
+
+inputs:
+  webhook-url:
+    description: Teams Workflows webhook URL. Pass the TEAMS_WEBHOOK_URL secret from the caller.
+    required: true
+  status:
+    description: Job status - "success" reports ok, anything else reports failure. Pass job.status from the caller.
+    required: true
+  service:
+    description: Service/component name shown in the card header and facts (e.g. celli-algo).
+    required: true
+  action-label:
+    description: What happened, shown after the service in the header (e.g. "build & push", "apply").
+    required: false
+    default: deploy
+  version:
+    description: Version or image tag to show (optional; omitted from the card when empty).
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Post to Teams
+      shell: bash
+      env:
+        WEBHOOK_URL: ${{ inputs.webhook-url }}
+        STATUS: ${{ inputs.status }}
+        SERVICE: ${{ inputs.service }}
+        ACTION_LABEL: ${{ inputs.action-label }}
+        VERSION: ${{ inputs.version }}
+        SHA: ${{ github.sha }}
+        ACTOR: ${{ github.actor }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: |
+        set -uo pipefail
+        if [ -z "${WEBHOOK_URL}" ]; then
+          echo "::warning::TEAMS_WEBHOOK_URL not set - skipping Teams notification"
+          exit 0
+        fi
+
+        if [ "${STATUS}" = "success" ]; then
+          ICON="✅"; STATE="Succeeded"; STYLE="good"
+        else
+          ICON="🔴"; STATE="FAILED"; STYLE="attention"
+        fi
+        SHORT_SHA="${SHA:0:7}"
+
+        facts=$(jq -n \
+          --arg state "${STATE}" \
+          --arg service "${SERVICE}" \
+          --arg version "${VERSION}" \
+          --arg sha "${SHORT_SHA}" \
+          --arg actor "${ACTOR}" \
+          '[{title:"Status",value:$state},{title:"Service",value:$service}]
+           + (if $version != "" then [{title:"Version",value:$version}] else [] end)
+           + [{title:"Commit",value:$sha},{title:"Actor",value:$actor}]')
+
+        payload=$(jq -n \
+          --arg header "${ICON} ${SERVICE} · ${ACTION_LABEL}" \
+          --arg style "${STYLE}" \
+          --arg runurl "${RUN_URL}" \
+          --argjson facts "${facts}" \
+          '{
+            type:"message",
+            attachments:[{
+              contentType:"application/vnd.microsoft.card.adaptive",
+              content:{
+                "$schema":"http://adaptivecards.io/schemas/adaptive-card.json",
+                type:"AdaptiveCard",
+                version:"1.4",
+                body:[
+                  {type:"Container",style:$style,bleed:true,items:[
+                    {type:"TextBlock",text:$header,weight:"Bolder",size:"Medium",color:"Light"}]},
+                  {type:"FactSet",facts:$facts}
+                ],
+                actions:[{type:"Action.OpenUrl",title:"View run",url:$runurl}]
+              }
+            }]
+          }')
+
+        code=$(curl -sS -o /dev/null -w '%{http_code}' \
+          -H "Content-Type: application/json" \
+          -d "${payload}" "${WEBHOOK_URL}") || {
+            echo "::warning::Teams notification request failed"; exit 0; }
+        # Workflows returns 200/202 on accept.
+        case "${code}" in
+          200|202) echo "Teams notified (HTTP ${code})" ;;
+          *) echo "::warning::Teams notification returned HTTP ${code}" ;;
+        esac
